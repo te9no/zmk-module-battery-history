@@ -1,5 +1,5 @@
 /**
- * Tests for RPCTestSection component
+ * Tests for BatteryHistorySection component
  * 
  * This test demonstrates how to use react-zmk-studio test helpers to test
  * components that interact with ZMK devices. This serves as a reference
@@ -11,11 +11,11 @@ import {
   createConnectedMockZMKApp,
   ZMKAppProvider,
 } from "@cormoran/zmk-studio-react-hook/testing";
-import { RPCTestSection, SUBSYSTEM_IDENTIFIER } from "../src/App";
+import { BatteryHistorySection, SUBSYSTEM_IDENTIFIER } from "../src/App";
 
-describe("RPCTestSection Component", () => {
+describe("BatteryHistorySection Component", () => {
   describe("With Subsystem", () => {
-    it("should render RPC controls when subsystem is found", () => {
+    it("should render battery history controls when subsystem is found", () => {
       // Create a connected mock ZMK app with the required subsystem
       const mockZMKApp = createConnectedMockZMKApp({
         deviceName: "Test Device",
@@ -24,31 +24,30 @@ describe("RPCTestSection Component", () => {
 
       render(
         <ZMKAppProvider value={mockZMKApp}>
-          <RPCTestSection />
+          <BatteryHistorySection />
         </ZMKAppProvider>
       );
 
-      // Check for RPC test UI elements
-      expect(screen.getByText(/RPC Test/i)).toBeInTheDocument();
-      expect(screen.getByText(/Send a sample request/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Value:/i)).toBeInTheDocument();
-      expect(screen.getByText(/Send Request/i)).toBeInTheDocument();
+      // Check for battery history UI elements
+      expect(screen.getByRole('heading', { name: /Battery History/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Fetch History/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Clear History/i })).toBeInTheDocument();
     });
 
-    it("should show default input value", () => {
+    it("should have clear button disabled initially", () => {
       const mockZMKApp = createConnectedMockZMKApp({
         subsystems: [SUBSYSTEM_IDENTIFIER],
       });
 
       render(
         <ZMKAppProvider value={mockZMKApp}>
-          <RPCTestSection />
+          <BatteryHistorySection />
         </ZMKAppProvider>
       );
 
-      // Check that the input has a default value
-      const input = screen.getByLabelText(/Value:/i) as HTMLInputElement;
-      expect(input.value).toBe("42");
+      // Clear button should be disabled when no history data is loaded
+      const clearButton = screen.getByRole('button', { name: /Clear History/i });
+      expect(clearButton).toBeDisabled();
     });
   });
 
@@ -62,19 +61,19 @@ describe("RPCTestSection Component", () => {
 
       render(
         <ZMKAppProvider value={mockZMKApp}>
-          <RPCTestSection />
+          <BatteryHistorySection />
         </ZMKAppProvider>
       );
 
       // Check for warning message
-      expect(screen.getByText(/Subsystem "zmk__template" not found/i)).toBeInTheDocument();
-      expect(screen.getByText(/Make sure your firmware includes the template module/i)).toBeInTheDocument();
+      expect(screen.getByText(/Subsystem "zmk__battery_history" not found/i)).toBeInTheDocument();
+      expect(screen.getByText(/Make sure your firmware includes the battery history module/i)).toBeInTheDocument();
     });
   });
 
   describe("Without ZMKAppContext", () => {
     it("should not render when ZMKAppContext is not provided", () => {
-      const { container } = render(<RPCTestSection />);
+      const { container } = render(<BatteryHistorySection />);
 
       // Component should return null when context is not available
       expect(container.firstChild).toBeNull();

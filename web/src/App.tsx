@@ -1,6 +1,6 @@
 /**
- * ZMK Module Template - Main Application
- * Demonstrates custom RPC communication with a ZMK device
+ * ZMK Battery History - Main Application
+ * Displays battery consumption history for keyboard devices
  */
 
 import { useContext, useState } from "react";
@@ -11,17 +11,31 @@ import {
   ZMKCustomSubsystem,
   ZMKAppContext,
 } from "@cormoran/zmk-studio-react-hook";
-import { Request, Response } from "./proto/zmk/template/custom";
+import {
+  Request,
+  Response,
+  BatteryHistoryEntry,
+} from "./proto/zmk/template/custom";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 
 // Custom subsystem identifier - must match firmware registration
-export const SUBSYSTEM_IDENTIFIER = "zmk__template";
+export const SUBSYSTEM_IDENTIFIER = "zmk__battery_history";
 
 function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🔧 ZMK Module Template</h1>
-        <p>Custom Studio RPC Demo</p>
+        <h1>🔋 ZMK Battery History</h1>
+        <p>Track your keyboard's battery consumption over time</p>
       </header>
 
       <ZMKConnection
@@ -56,36 +70,45 @@ function App() {
               </button>
             </section>
 
-            <RPCTestSection />
+            <BatteryHistorySection />
           </>
         )}
       />
 
       <footer className="app-footer">
         <p>
-          <strong>Template Module</strong> - Customize this for your ZMK module
+          <strong>ZMK Battery History</strong> - Monitor battery consumption
+          and optimize your keyboard usage
         </p>
       </footer>
     </div>
   );
 }
 
-export function RPCTestSection() {
+interface BatteryHistoryData {
+  entries: BatteryHistoryEntry[];
+  currentBattery: number;
+  totalEntries: number;
+}
+
+export function BatteryHistorySection() {
   const zmkApp = useContext(ZMKAppContext);
-  const [inputValue, setInputValue] = useState<number>(42);
-  const [response, setResponse] = useState<string | null>(null);
+  const [historyData, setHistoryData] = useState<BatteryHistoryData | null>(
+    null
+  );
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!zmkApp) return null;
 
   const subsystem = zmkApp.findSubsystem(SUBSYSTEM_IDENTIFIER);
 
-  // Send a sample request to the firmware
-  const sendSampleRequest = async () => {
+  // Fetch battery history from device
+  const fetchHistory = async () => {
     if (!zmkApp.state.connection || !subsystem) return;
 
     setIsLoading(true);
-    setResponse(null);
+    setError(null);
 
     try {
       const service = new ZMKCustomSubsystem(
@@ -93,31 +116,79 @@ export function RPCTestSection() {
         subsystem.index
       );
 
-      // Create the request using ts-proto
       const request = Request.create({
-        sample: {
-          value: inputValue,
-        },
+        getBatteryHistory: {},
       });
 
-      // Encode and send the request
       const payload = Request.encode(request).finish();
       const responsePayload = await service.callRPC(payload);
 
       if (responsePayload) {
         const resp = Response.decode(responsePayload);
-        console.log("Decoded response:", resp);
 
-        if (resp.sample) {
-          setResponse(resp.sample.value);
+        if (resp.batteryHistory) {
+          setHistoryData({
+            entries: resp.batteryHistory.entries,
+            currentBattery: resp.batteryHistory.currentBattery,
+            totalEntries: resp.batteryHistory.totalEntries,
+          });
+          setError(null);
         } else if (resp.error) {
-          setResponse(`Error: ${resp.error.message}`);
+          setError(`Error: ${resp.error.message}`);
         }
       }
-    } catch (error) {
-      console.error("RPC call failed:", error);
-      setResponse(
-        `Failed: ${error instanceof Error ? error.message : "Unknown error"}`
+    } catch (err) {
+      console.error("Failed to fetch battery history:", err);
+      setError(
+        `Failed: ${err instanceof Error ? err.message : "Unknown error"}`
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Clear battery history
+  const clearHistory = async () => {
+    if (!zmkApp.state.connection || !subsystem) return;
+
+    if (
+      !confirm(
+        "Are you sure you want to clear all battery history? This cannot be undone."
+      )
+    ) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const service = new ZMKCustomSubsystem(
+        zmkApp.state.connection,
+        subsystem.index
+      );
+
+      const request = Request.create({
+        clearBatteryHistory: {},
+      });
+
+      const payload = Request.encode(request).finish();
+      const responsePayload = await service.callRPC(payload);
+
+      if (responsePayload) {
+        const resp = Response.decode(responsePayload);
+
+        if (resp.clearBatteryHistory?.success) {
+          setHistoryData(null);
+          alert("Battery history cleared successfully!");
+        } else if (resp.error) {
+          setError(`Error: ${resp.error.message}`);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to clear battery history:", err);
+      setError(
+        `Failed: ${err instanceof Error ? err.message : "Unknown error"}`
       );
     } finally {
       setIsLoading(false);
@@ -130,7 +201,7 @@ export function RPCTestSection() {
         <div className="warning-message">
           <p>
             ⚠️ Subsystem "{SUBSYSTEM_IDENTIFIER}" not found. Make sure your
-            firmware includes the template module.
+            firmware includes the battery history module.
           </p>
         </div>
       </section>
@@ -138,36 +209,147 @@ export function RPCTestSection() {
   }
 
   return (
-    <section className="card">
-      <h2>RPC Test</h2>
-      <p>Send a sample request to the firmware:</p>
+    <section className="card battery-history-section">
+      <h2>Battery History</h2>
 
-      <div className="input-group">
-        <label htmlFor="value-input">Value:</label>
-        <input
-          id="value-input"
-          type="number"
-          value={inputValue}
-          onChange={(e) => setInputValue(parseInt(e.target.value) || 0)}
-        />
+      <div className="controls">
+        <button
+          className="btn btn-primary"
+          disabled={isLoading}
+          onClick={fetchHistory}
+        >
+          {isLoading ? "⏳ Loading..." : "📊 Fetch History"}
+        </button>
+        <button
+          className="btn btn-danger"
+          disabled={isLoading || !historyData}
+          onClick={clearHistory}
+        >
+          🗑️ Clear History
+        </button>
       </div>
 
-      <button
-        className="btn btn-primary"
-        disabled={isLoading}
-        onClick={sendSampleRequest}
-      >
-        {isLoading ? "⏳ Sending..." : "📤 Send Request"}
-      </button>
-
-      {response && (
-        <div className="response-box">
-          <h3>Response from Firmware:</h3>
-          <pre>{response}</pre>
+      {error && (
+        <div className="error-message">
+          <p>{error}</p>
         </div>
+      )}
+
+      {historyData && (
+        <>
+          <div className="battery-stats">
+            <div className="stat-card">
+              <h3>Current Battery</h3>
+              <div className="stat-value">
+                {historyData.currentBattery}%
+                <div
+                  className="battery-bar"
+                  style={{
+                    width: `${historyData.currentBattery}%`,
+                    backgroundColor:
+                      historyData.currentBattery > 50
+                        ? "#4caf50"
+                        : historyData.currentBattery > 20
+                          ? "#ff9800"
+                          : "#f44336",
+                  }}
+                />
+              </div>
+            </div>
+            <div className="stat-card">
+              <h3>Data Points</h3>
+              <div className="stat-value">{historyData.totalEntries}</div>
+            </div>
+            <div className="stat-card">
+              <h3>Time Range</h3>
+              <div className="stat-value">
+                {historyData.entries.length > 0
+                  ? formatTimeRange(
+                      historyData.entries[0].timestamp,
+                      historyData.entries[historyData.entries.length - 1]
+                        .timestamp
+                    )
+                  : "No data"}
+              </div>
+            </div>
+          </div>
+
+          {historyData.entries.length > 0 ? (
+            <div className="chart-container">
+              <ResponsiveContainer width="100%" height={400}>
+                <LineChart
+                  data={historyData.entries.map((entry) => ({
+                    time: formatTimestamp(entry.timestamp),
+                    battery: entry.batteryPercentage,
+                    timestamp: entry.timestamp,
+                  }))}
+                  margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                  <XAxis
+                    dataKey="time"
+                    angle={-45}
+                    textAnchor="end"
+                    height={100}
+                    stroke="#fff"
+                  />
+                  <YAxis
+                    domain={[0, 100]}
+                    label={{
+                      value: "Battery %",
+                      angle: -90,
+                      position: "insideLeft",
+                    }}
+                    stroke="#fff"
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#2a2a2a",
+                      border: "1px solid #646cff",
+                    }}
+                    labelFormatter={(label) => `Time: ${label}`}
+                  />
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey="battery"
+                    stroke="#646cff"
+                    strokeWidth={2}
+                    dot={{ fill: "#646cff", r: 4 }}
+                    name="Battery Level (%)"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="info-message">
+              <p>
+                No battery history data available. The device will record
+                battery levels over time.
+              </p>
+            </div>
+          )}
+        </>
       )}
     </section>
   );
+}
+
+function formatTimestamp(timestamp: number): string {
+  // Convert seconds to hours for uptime display
+  const hours = Math.floor(timestamp / 3600);
+  const minutes = Math.floor((timestamp % 3600) / 60);
+  return `${hours}h ${minutes}m`;
+}
+
+function formatTimeRange(start: number, end: number): string {
+  const duration = end - start;
+  const days = Math.floor(duration / 86400);
+  const hours = Math.floor((duration % 86400) / 3600);
+  if (days > 0) {
+    return `${days}d ${hours}h`;
+  }
+  return `${hours}h`;
 }
 
 export default App;

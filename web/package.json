@@ -17,7 +17,8 @@
     "@cormoran/zmk-studio-react-hook": "github:cormoran/react-zmk-studio#77652d6",
     "@zmkfirmware/zmk-studio-ts-client": "github:cormoran/zmk-studio-ts-client#custom-studio-protocol",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "recharts": "^3.6.0"
   },
   "devDependencies": {
     "@bufbuild/buf": "^1.62.1",
