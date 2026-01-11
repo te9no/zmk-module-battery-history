@@ -282,7 +282,7 @@ export function BatteryHistorySection() {
               <div className="device-metadata">
                 <div className="metadata-item">
                   <span className="metadata-label">Current Entries</span>
-                  <span className="metadata-value">{data.entries.length}</span>
+                  <span className="metadata-value">{data.entries?.length ?? 0}</span>
                 </div>
               </div>
             )}
@@ -295,7 +295,7 @@ export function BatteryHistorySection() {
           </div>
 
           {/* Statistics */}
-          {data && data.entries.length > 0 && (
+          {data && data.entries && data.entries.length > 0 && (
             <div className="stats-section">
               <BatteryStats entries={data.entries} />
             </div>
