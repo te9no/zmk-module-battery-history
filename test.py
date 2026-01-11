@@ -38,7 +38,7 @@ class WestCommandsTests(unittest.TestCase):
         tests_build = self.BUILD_DIR / "tests"
         shutil.rmtree(tests_build, ignore_errors=True)
 
-        result = run_west(["zmk-test", "tests", '-m', '.'])
+        result = run_west(["zmk-test", "tests", '-m', '.' , '-v'])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("PASS: battery-history", result.stdout)
 

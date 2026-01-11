@@ -71,6 +71,7 @@ config ZMK_BATTERY_IGNORE_ZERO_LEVEL
 config ZMK_BATTERY_SKIP_IF_USB_POWERED
     bool "Skip battery history recording when USB powered"
     default y
+    depends on USB_DEVICE_STACK
     help
       Do not record battery history entries when the device is powered via USB.
       This avoids logging irrelevant battery levels during charging or USB power.
