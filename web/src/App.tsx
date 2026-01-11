@@ -1,6 +1,11 @@
 /**
- * ZMK Module Template - Main Application
- * Demonstrates custom RPC communication with a ZMK device
+ * ZMK Battery History Module - Main Application
+ *
+ * Web UI for viewing battery consumption history from ZMK keyboards.
+ * Features:
+ * - Real-time battery level display
+ * - Historical battery data visualization
+ * - Statistics and estimated battery life
  */
 
 import { useContext, useState } from "react";
@@ -11,59 +16,81 @@ import {
   ZMKCustomSubsystem,
   ZMKAppContext,
 } from "@cormoran/zmk-studio-react-hook";
-import { Request, Response } from "./proto/zmk/template/custom";
+import { Request, Response } from "./proto/zmk/battery_history/battery_history";
+import { BatteryHistorySection, BATTERY_HISTORY_SUBSYSTEM } from "./components/BatteryHistorySection";
 
-// Custom subsystem identifier - must match firmware registration
-export const SUBSYSTEM_IDENTIFIER = "zmk__template";
+// Custom subsystem identifier for battery history - must match firmware registration
+export const SUBSYSTEM_IDENTIFIER = BATTERY_HISTORY_SUBSYSTEM;
 
 function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🔧 ZMK Module Template</h1>
-        <p>Custom Studio RPC Demo</p>
+        <h1>🔋 Battery History</h1>
+        <p>Monitor your keyboard's battery consumption over time</p>
       </header>
 
       <ZMKConnection
         renderDisconnected={({ connect, isLoading, error }) => (
-          <section className="card">
-            <h2>Device Connection</h2>
-            {isLoading && <p>⏳ Connecting...</p>}
-            {error && (
-              <div className="error-message">
-                <p>🚨 {error}</p>
-              </div>
-            )}
-            {!isLoading && (
-              <button
-                className="btn btn-primary"
-                onClick={() => connect(serial_connect)}
-              >
-                🔌 Connect Serial
-              </button>
-            )}
+          <section className="card connect-card">
+            <div className="connect-content">
+              <div className="connect-icon">⌨️</div>
+              <h2>Connect Your Keyboard</h2>
+              <p>Connect via USB serial to view battery history data.</p>
+
+              {isLoading && (
+                <div className="loading-indicator">
+                  <span className="loading-spinner"></span>
+                  <span>Connecting...</span>
+                </div>
+              )}
+
+              {error && (
+                <div className="error-message">
+                  <p>🚨 {error}</p>
+                </div>
+              )}
+
+              {!isLoading && (
+                <button
+                  className="btn btn-primary btn-large"
+                  onClick={() => connect(serial_connect)}
+                >
+                  🔌 Connect via USB
+                </button>
+              )}
+
+              <p className="connect-hint">
+                Make sure your keyboard is connected and has Studio mode enabled.
+              </p>
+            </div>
           </section>
         )}
         renderConnected={({ disconnect, deviceName }) => (
           <>
-            <section className="card">
-              <h2>Device Connection</h2>
-              <div className="device-info">
-                <h3>✅ Connected to: {deviceName}</h3>
+            <section className="card device-card">
+              <div className="device-status">
+                <div className="device-info">
+                  <span className="status-indicator connected"></span>
+                  <span className="device-name">{deviceName}</span>
+                </div>
+                <button className="btn btn-secondary btn-small" onClick={disconnect}>
+                  Disconnect
+                </button>
               </div>
-              <button className="btn btn-secondary" onClick={disconnect}>
-                Disconnect
-              </button>
             </section>
 
-            <RPCTestSection />
+            <BatteryHistorySection />
           </>
         )}
       />
 
       <footer className="app-footer">
         <p>
-          <strong>Template Module</strong> - Customize this for your ZMK module
+          <strong>ZMK Battery History Module</strong>
+        </p>
+        <p className="footer-hint">
+          Data is stored on your keyboard and fetched each time you connect.
         </p>
       </footer>
     </div>
@@ -72,7 +99,7 @@ function App() {
 
 export function RPCTestSection() {
   const zmkApp = useContext(ZMKAppContext);
-  const [inputValue, setInputValue] = useState<number>(42);
+  const [includeMetadata, setIncludeMetadata] = useState<boolean>(true);
   const [response, setResponse] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -80,8 +107,8 @@ export function RPCTestSection() {
 
   const subsystem = zmkApp.findSubsystem(SUBSYSTEM_IDENTIFIER);
 
-  // Send a sample request to the firmware
-  const sendSampleRequest = async () => {
+  // Send a battery history request to the firmware
+  const sendBatteryHistoryRequest = async () => {
     if (!zmkApp.state.connection || !subsystem) return;
 
     setIsLoading(true);
@@ -95,8 +122,8 @@ export function RPCTestSection() {
 
       // Create the request using ts-proto
       const request = Request.create({
-        sample: {
-          value: inputValue,
+        getHistory: {
+          includeMetadata: includeMetadata,
         },
       });
 
@@ -108,8 +135,14 @@ export function RPCTestSection() {
         const resp = Response.decode(responsePayload);
         console.log("Decoded response:", resp);
 
-        if (resp.sample) {
-          setResponse(resp.sample.value);
+        if (resp.getHistory) {
+          const entries = resp.getHistory.entries || [];
+          const metadata = resp.getHistory.metadata;
+          setResponse(
+            `Battery Level: ${resp.getHistory.currentBatteryLevel}%\n` +
+            `Entries: ${entries.length}\n` +
+            (metadata ? `Device: ${metadata.deviceName}\nInterval: ${metadata.recordingIntervalMinutes}min` : "")
+          );
         } else if (resp.error) {
           setResponse(`Error: ${resp.error.message}`);
         }
@@ -130,7 +163,7 @@ export function RPCTestSection() {
         <div className="warning-message">
           <p>
             ⚠️ Subsystem "{SUBSYSTEM_IDENTIFIER}" not found. Make sure your
-            firmware includes the template module.
+            firmware includes the battery history module.
           </p>
         </div>
       </section>
@@ -140,22 +173,24 @@ export function RPCTestSection() {
   return (
     <section className="card">
       <h2>RPC Test</h2>
-      <p>Send a sample request to the firmware:</p>
+      <p>Send a battery history request to the firmware:</p>
 
       <div className="input-group">
-        <label htmlFor="value-input">Value:</label>
-        <input
-          id="value-input"
-          type="number"
-          value={inputValue}
-          onChange={(e) => setInputValue(parseInt(e.target.value) || 0)}
-        />
+        <label htmlFor="metadata-checkbox">
+          <input
+            id="metadata-checkbox"
+            type="checkbox"
+            checked={includeMetadata}
+            onChange={(e) => setIncludeMetadata(e.target.checked)}
+          />
+          Include Metadata
+        </label>
       </div>
 
       <button
         className="btn btn-primary"
         disabled={isLoading}
-        onClick={sendSampleRequest}
+        onClick={sendBatteryHistoryRequest}
       >
         {isLoading ? "⏳ Sending..." : "📤 Send Request"}
       </button>
