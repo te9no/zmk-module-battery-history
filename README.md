@@ -38,6 +38,11 @@ manifest:
 Add to your `config/<shield>.conf`:
 
 ```conf
+# Enable dependencies
+CONFIG_ZMK_BATTERY_REPORTING=y
+CONFIG_SETTINGS=y
+CONFIG_SETTINGS_RUNTIME=y
+
 # Enable battery history tracking
 CONFIG_ZMK_BATTERY_HISTORY=y
 

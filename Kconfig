@@ -1,18 +1,9 @@
-config ZMK_TEMPLATE_FEATURE
-    bool "Enable template feature"
-
-if ZMK_TEMPLATE_FEATURE
-
-config ZMK_TEMPLATE_FEATURE_STUDIO_RPC
-    bool "Enable template feature custom Studio RPC"
-    depends on ZMK_STUDIO
-
-endif
-
 # Battery History Feature
 config ZMK_BATTERY_HISTORY
     bool "Enable battery history tracking"
     depends on ZMK_BATTERY_REPORTING
+    depends on SETTINGS
+    depends on SETTINGS_RUNTIME
     help
       Track battery level over time and store history in persistent storage.
       This allows users to view battery consumption patterns.
