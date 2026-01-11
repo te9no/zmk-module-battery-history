@@ -44,16 +44,10 @@ message BatterySourceData {
 
 // Response containing battery history data
 message GetBatteryHistoryResponse {
-    // Array of battery history entries, ordered from oldest to newest
-    // DEPRECATED: Use sources instead for split keyboard support
-    repeated BatteryHistoryEntry entries = 1;
+    // Battery data for each source (central and peripherals)
+    repeated BatterySourceData sources = 1;
     // Optional device metadata
     DeviceMetadata metadata = 2;
-    // Current battery level percentage
-    // DEPRECATED: Use sources instead for split keyboard support
-    uint32 current_battery_level = 3;
-    // Battery data for each source (central and peripherals)
-    repeated BatterySourceData sources = 4;
 }
 
 // Request to clear battery history from device storage

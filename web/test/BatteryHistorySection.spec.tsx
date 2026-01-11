@@ -84,34 +84,6 @@ describe("BatteryHistorySection Component", () => {
         subsystems: [BATTERY_HISTORY_SUBSYSTEM],
       });
 
-      // Mock a split keyboard response
-      const mockData = {
-        metadata: {
-          deviceName: "Split Keyboard",
-          recordingIntervalMinutes: 5,
-          maxEntries: 192,
-          isSplit: true,
-          peripheralCount: 1,
-        },
-        sources: [
-          {
-            source: 0,
-            sourceName: "Central",
-            entries: [],
-            currentBatteryLevel: 85,
-          },
-          {
-            source: 1,
-            sourceName: "Peripheral 1",
-            entries: [],
-            currentBatteryLevel: 82,
-          },
-        ],
-        // Legacy fields for backward compatibility
-        entries: [],
-        currentBatteryLevel: 85,
-      };
-
       const { container } = render(
         <ZMKAppProvider value={mockZMKApp}>
           <BatteryHistorySection />

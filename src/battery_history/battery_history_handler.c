@@ -147,23 +147,6 @@ static int handle_get_history_request(const zmk_battery_history_GetBatteryHistor
         result.sources_count++;
     }
 
-    // Maintain backward compatibility: populate legacy fields with central (source 0) data
-    int central_level = zmk_battery_history_get_current_level();
-    if (central_level >= 0) {
-        result.current_battery_level = (uint32_t)central_level;
-    }
-
-    int central_count = zmk_battery_history_get_count();
-    result.entries_count = 0;
-    for (int i = 0; i < central_count && i < CONFIG_ZMK_BATTERY_HISTORY_MAX_ENTRIES; i++) {
-        struct zmk_battery_history_entry entry;
-        if (zmk_battery_history_get_entry(i, &entry) == 0) {
-            result.entries[result.entries_count].timestamp = entry.timestamp;
-            result.entries[result.entries_count].battery_level = entry.battery_level;
-            result.entries_count++;
-        }
-    }
-
     // Include metadata if requested
     if (req->include_metadata) {
         result.has_metadata = true;
@@ -174,8 +157,7 @@ static int handle_get_history_request(const zmk_battery_history_GetBatteryHistor
         result.metadata.peripheral_count = source_count > 1 ? (uint32_t)(source_count - 1) : 0;
     }
 
-    LOG_INF("Returning battery history: %d sources, central: %d entries at %d%%",
-            result.sources_count, result.entries_count, result.current_battery_level);
+    LOG_INF("Returning battery history: %d sources", result.sources_count);
 
     resp->which_response_type = zmk_battery_history_Response_get_history_tag;
     resp->response_type.get_history = result;
