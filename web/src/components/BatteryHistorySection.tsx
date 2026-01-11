@@ -172,10 +172,14 @@ export function BatteryHistorySection() {
 
   const { data, isLoading, error, lastFetched } = state;
 
+  // Check if we have split keyboard data
+  const hasSplitData = data?.sources && data.sources.length > 1;
+  const isSplit = data?.metadata?.isSplit ?? false;
+
   return (
     <section className="card battery-section">
       <div className="section-header">
-        <h2>🔋 Battery History</h2>
+        <h2>🔋 Battery History {isSplit ? "(Split Keyboard)" : ""}</h2>
         <div className="section-actions">
           <button
             className="btn btn-icon"
@@ -202,46 +206,99 @@ export function BatteryHistorySection() {
         </div>
       )}
 
-      {/* Current Battery Status */}
-      <div className="battery-status-section">
-        <BatteryIndicator
-          level={data?.currentBatteryLevel ?? 0}
-          isLoading={isLoading && !data}
-        />
-
-        {data?.metadata && (
-          <div className="device-metadata">
-            <div className="metadata-item">
-              <span className="metadata-label">Recording Interval</span>
-              <span className="metadata-value">
-                {data.metadata.recordingIntervalMinutes} min
-              </span>
-            </div>
-            <div className="metadata-item">
-              <span className="metadata-label">Max Entries</span>
-              <span className="metadata-value">{data.metadata.maxEntries}</span>
-            </div>
-            <div className="metadata-item">
-              <span className="metadata-label">Current Entries</span>
-              <span className="metadata-value">{data.entries.length}</span>
-            </div>
+      {/* Display metadata */}
+      {data?.metadata && (
+        <div className="device-metadata">
+          <div className="metadata-item">
+            <span className="metadata-label">Recording Interval</span>
+            <span className="metadata-value">
+              {data.metadata.recordingIntervalMinutes} min
+            </span>
           </div>
-        )}
-      </div>
-
-      {/* Battery History Chart */}
-      <div className="chart-section">
-        <h3>Battery Level Over Time</h3>
-        <BatteryHistoryChart
-          entries={data?.entries ?? []}
-        />
-      </div>
-
-      {/* Statistics */}
-      {data && data.entries.length > 0 && (
-        <div className="stats-section">
-          <BatteryStats entries={data.entries} />
+          <div className="metadata-item">
+            <span className="metadata-label">Max Entries</span>
+            <span className="metadata-value">{data.metadata.maxEntries}</span>
+          </div>
+          {isSplit && (
+            <div className="metadata-item">
+              <span className="metadata-label">Peripherals</span>
+              <span className="metadata-value">{data.metadata.peripheralCount}</span>
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Display split keyboard sources or single source */}
+      {hasSplitData ? (
+        // Split keyboard: show each source separately
+        data.sources.map((source) => (
+          <div key={source.source} className="source-section">
+            <h3>📱 {source.sourceName}</h3>
+            
+            {/* Current Battery Status */}
+            <div className="battery-status-section">
+              <BatteryIndicator
+                level={source.currentBatteryLevel ?? 0}
+                isLoading={isLoading && !data}
+              />
+              
+              <div className="device-metadata">
+                <div className="metadata-item">
+                  <span className="metadata-label">Current Entries</span>
+                  <span className="metadata-value">{source.entries.length}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Battery History Chart */}
+            {source.entries.length > 0 && (
+              <>
+                <div className="chart-section">
+                  <h4>Battery Level Over Time</h4>
+                  <BatteryHistoryChart entries={source.entries} />
+                </div>
+
+                {/* Statistics */}
+                <div className="stats-section">
+                  <BatteryStats entries={source.entries} />
+                </div>
+              </>
+            )}
+          </div>
+        ))
+      ) : (
+        // Non-split keyboard: use legacy fields
+        <>
+          {/* Current Battery Status */}
+          <div className="battery-status-section">
+            <BatteryIndicator
+              level={data?.currentBatteryLevel ?? 0}
+              isLoading={isLoading && !data}
+            />
+            
+            {data?.metadata && (
+              <div className="device-metadata">
+                <div className="metadata-item">
+                  <span className="metadata-label">Current Entries</span>
+                  <span className="metadata-value">{data.entries.length}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Battery History Chart */}
+          <div className="chart-section">
+            <h3>Battery Level Over Time</h3>
+            <BatteryHistoryChart entries={data?.entries ?? []} />
+          </div>
+
+          {/* Statistics */}
+          {data && data.entries.length > 0 && (
+            <div className="stats-section">
+              <BatteryStats entries={data.entries} />
+            </div>
+          )}
+        </>
       )}
 
       {/* Last updated */}
