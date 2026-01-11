@@ -223,10 +223,10 @@ static int save_history(void) {
  * Check if we should save based on battery level drop
  * Returns true if battery has dropped by threshold since last save
  */
-static bool should_save_entries(uint16_t timestamp, uint8_t current_battery_level) {
-    uint8_t level_gap = last_saved_battery_level > current_battery_level
-                            ? last_saved_battery_level - current_battery_level
-                            : current_battery_level - last_saved_battery_level;
+static bool should_save_entries(uint16_t timestamp, uint8_t level) {
+    uint8_t level_gap = last_saved_battery_level > level
+                            ? last_saved_battery_level - level
+                            : level - last_saved_battery_level;
     if (level_gap >= SAVE_LEVEL_THRESHOLD) {
         LOG_DBG("Save triggered by level threshold");
         return true;
@@ -447,6 +447,18 @@ static int battery_history_init(void) {
             MAX_ENTRIES, CONFIG_ZMK_BATTERY_HISTORY_INTERVAL_MINUTES, SAVE_LEVEL_THRESHOLD);
 
     // Initialize all source histories
+    // Temporarily undefine macros to avoid conflicts
+    #undef history_buffer
+    #undef history_head
+    #undef history_count
+    #undef unsaved_count
+    #undef first_unsaved_idx
+    #undef last_saved_battery_level
+    #undef last_saved_timestamp
+    #undef current_battery_level
+    #undef first_record_after_boot
+    #undef head_changed_since_save
+    
     for (int i = 0; i < SOURCE_COUNT; i++) {
         source_history[i].head = 0;
         source_history[i].count = 0;
@@ -459,6 +471,18 @@ static int battery_history_init(void) {
         source_history[i].head_changed_since_save = false;
         memset(source_history[i].buffer, 0, sizeof(source_history[i].buffer));
     }
+    
+    // Redefine macros for backward compatibility
+    #define history_buffer (source_history[0].buffer)
+    #define history_head (source_history[0].head)
+    #define history_count (source_history[0].count)
+    #define unsaved_count (source_history[0].unsaved_count)
+    #define first_unsaved_idx (source_history[0].first_unsaved_idx)
+    #define last_saved_battery_level (source_history[0].last_saved_level)
+    #define last_saved_timestamp (source_history[0].last_saved_timestamp)
+    #define current_battery_level (source_history[0].current_level)
+    #define first_record_after_boot (source_history[0].first_record_after_boot)
+    #define head_changed_since_save (source_history[0].head_changed_since_save)
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
     LOG_INF("Split keyboard support enabled: %d sources (1 central + %d peripherals)",
