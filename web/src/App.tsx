@@ -1,6 +1,6 @@
 /**
  * ZMK Battery History Module - Main Application
- * 
+ *
  * Web UI for viewing battery consumption history from ZMK keyboards.
  * Features:
  * - Real-time battery level display
@@ -20,7 +20,7 @@ import { Request, Response } from "./proto/zmk/template/custom";
 import { BatteryHistorySection, BATTERY_HISTORY_SUBSYSTEM } from "./components/BatteryHistorySection";
 
 // Custom subsystem identifier for template - must match firmware registration
-export const SUBSYSTEM_IDENTIFIER = "zmk__template";
+export const SUBSYSTEM_IDENTIFIER = BATTERY_HISTORY_SUBSYSTEM;
 
 function App() {
   return (
@@ -37,20 +37,20 @@ function App() {
               <div className="connect-icon">⌨️</div>
               <h2>Connect Your Keyboard</h2>
               <p>Connect via USB serial to view battery history data.</p>
-              
+
               {isLoading && (
                 <div className="loading-indicator">
                   <span className="loading-spinner"></span>
                   <span>Connecting...</span>
                 </div>
               )}
-              
+
               {error && (
                 <div className="error-message">
                   <p>🚨 {error}</p>
                 </div>
               )}
-              
+
               {!isLoading && (
                 <button
                   className="btn btn-primary btn-large"
@@ -59,7 +59,7 @@ function App() {
                   🔌 Connect via USB
                 </button>
               )}
-              
+
               <p className="connect-hint">
                 Make sure your keyboard is connected and has Studio mode enabled.
               </p>

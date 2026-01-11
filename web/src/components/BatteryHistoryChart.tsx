@@ -15,8 +15,6 @@ import "./BatteryHistoryChart.css";
 
 interface BatteryHistoryChartProps {
   entries: BatteryHistoryEntry[];
-  currentLevel: number;
-  intervalMinutes: number;
   startTimestamp?: number;
 }
 
@@ -67,8 +65,6 @@ function getBatteryColorClass(level: number): string {
 
 export function BatteryHistoryChart({
   entries,
-  currentLevel,
-  intervalMinutes,
   startTimestamp,
 }: BatteryHistoryChartProps) {
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
@@ -76,7 +72,7 @@ export function BatteryHistoryChart({
   // Chart dimensions
   const chartWidth = 600;
   const chartHeight = 250;
-  const padding = { top: 20, right: 30, bottom: 40, left: 50 };
+  const padding = useMemo(() => ({ top: 20, right: 30, bottom: 40, left: 50 }), []);
   const innerWidth = chartWidth - padding.left - padding.right;
   const innerHeight = chartHeight - padding.top - padding.bottom;
 

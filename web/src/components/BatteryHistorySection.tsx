@@ -234,8 +234,6 @@ export function BatteryHistorySection() {
         <h3>Battery Level Over Time</h3>
         <BatteryHistoryChart
           entries={data?.entries ?? []}
-          currentLevel={data?.currentBatteryLevel ?? 0}
-          intervalMinutes={data?.metadata?.recordingIntervalMinutes ?? 60}
         />
       </div>
 
