@@ -30,12 +30,12 @@ describe("RPCTestSection Component", () => {
 
       // Check for RPC test UI elements
       expect(screen.getByText(/RPC Test/i)).toBeInTheDocument();
-      expect(screen.getByText(/Send a sample request/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Value:/i)).toBeInTheDocument();
+      expect(screen.getByText(/Send a battery history request/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Include Metadata/i)).toBeInTheDocument();
       expect(screen.getByText(/Send Request/i)).toBeInTheDocument();
     });
 
-    it("should show default input value", () => {
+    it("should show metadata checkbox checked by default", () => {
       const mockZMKApp = createConnectedMockZMKApp({
         subsystems: [SUBSYSTEM_IDENTIFIER],
       });
@@ -46,9 +46,9 @@ describe("RPCTestSection Component", () => {
         </ZMKAppProvider>
       );
 
-      // Check that the input has a default value
-      const input = screen.getByLabelText(/Value:/i) as HTMLInputElement;
-      expect(input.value).toBe("42");
+      // Check that the checkbox is checked by default
+      const checkbox = screen.getByLabelText(/Include Metadata/i) as HTMLInputElement;
+      expect(checkbox.checked).toBe(true);
     });
   });
 
