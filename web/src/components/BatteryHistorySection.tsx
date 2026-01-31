@@ -162,12 +162,19 @@ export function BatteryHistorySection() {
   }, [zmkApp, subsystem]);
 
   /**
-   * Fetch battery history from the device (central)
+   * Fetch battery history from all devices (central and peripherals)
+   * Data arrives via parallel notifications from each source
    */
   const fetchBatteryHistory = useCallback(async () => {
     if (!zmkApp?.state.connection || !subsystem) return;
 
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    setState((prev) => ({
+      ...prev,
+      isLoading: true,
+      error: null,
+    }));
+    // Clear all streaming buffers
+    streamingBuffersRef.current = {};
 
     try {
       const service = new ZMKCustomSubsystem(
@@ -175,16 +182,13 @@ export function BatteryHistorySection() {
         subsystem.index
       );
 
-      // Create the request
       const request = Request.create({
-        getHistory: {
-          includeMetadata: true,
-        },
+        getHistory: {},
       });
 
-      // Encode and send the request
       const payload = Request.encode(request).finish();
       const responsePayload = await service.callRPC(payload);
+      // Response is just acknowledgement, data comes via notifications
 
       if (responsePayload) {
         const resp = Response.decode(responsePayload);
@@ -196,82 +200,27 @@ export function BatteryHistorySection() {
             isLoading: false,
             error: resp.error?.message || "Unknown error",
           }));
-        } else if (resp.getHistory) {
-          setState((prev) => ({
-            ...prev,
-            dataBySource: {
-              ...prev.dataBySource,
-              0: {
-                entries: resp.getHistory!.entries,
-                metadata: resp.getHistory!.metadata,
-                currentBatteryLevel: resp.getHistory!.currentBatteryLevel,
-              },
-            },
-            isLoading: false,
-            error: null,
-            lastFetched: new Date(),
-          }));
+          return;
         }
       }
+
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+      }));
     } catch (error) {
       console.error("Failed to fetch battery history:", error);
       setState((prev) => ({
         ...prev,
         isLoading: false,
-        error: error instanceof Error ? error.message : "Failed to fetch data",
+        streamingProgressBySource: {},
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to request data",
       }));
     }
   }, [zmkApp, subsystem]);
-
-  /**
-   * Request battery history from all peripherals
-   * Data arrives via parallel notifications from each source
-   */
-  const requestPeripheralHistory = useCallback(
-    async () => {
-      if (!zmkApp?.state.connection || !subsystem) return;
-
-      setState((prev) => ({
-        ...prev,
-        isLoading: true,
-        error: null,
-      }));
-      // Clear all streaming buffers
-      streamingBuffersRef.current = {};
-
-      try {
-        const service = new ZMKCustomSubsystem(
-          zmkApp.state.connection,
-          subsystem.index
-        );
-
-        const request = Request.create({
-          requestPeripheralHistory: {},
-        });
-
-        const payload = Request.encode(request).finish();
-        await service.callRPC(payload);
-        // Response is just acknowledgement, data comes via notifications
-
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-        }));
-      } catch (error) {
-        console.error("Failed to request peripheral battery history:", error);
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          streamingProgressBySource: {},
-          error:
-            error instanceof Error
-              ? error.message
-              : "Failed to request data from peripherals",
-        }));
-      }
-    },
-    [zmkApp, subsystem]
-  );
 
   /**
    * Clear battery history on the device
@@ -309,7 +258,12 @@ export function BatteryHistorySection() {
             error: resp.error?.message || "Unknown error",
           }));
         } else if (resp.clearHistory) {
-          // Refetch to show empty state
+          // Clear local data and refetch
+          setState((prev) => ({
+            ...prev,
+            dataBySource: {},
+            isLoading: false,
+          }));
           await fetchBatteryHistory();
         }
       }
@@ -368,18 +322,10 @@ export function BatteryHistorySection() {
           <button
             className="btn btn-icon"
             onClick={fetchBatteryHistory}
-            disabled={isLoading}
-            title="Refresh central data"
+            disabled={isLoading || isStreaming}
+            title="Refresh data"
           >
             <span className={isLoading ? "spin" : ""}>🔄</span>
-          </button>
-          <button
-            className="btn btn-icon"
-            onClick={() => requestPeripheralHistory()}
-            disabled={isLoading || isStreaming}
-            title="Request all peripheral data"
-          >
-            📡
           </button>
           <button
             className="btn btn-icon btn-danger"

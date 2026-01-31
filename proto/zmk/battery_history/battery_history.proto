@@ -2,16 +2,9 @@ syntax = "proto3";
 
 package zmk.battery_history;
 
-// Request to get battery history data
+// Request to get battery history from all devices (central and peripherals)
+// Data is returned via notifications as streaming entries
 message GetBatteryHistoryRequest {
-    // Optional: if true, also returns device metadata
-    bool include_metadata = 1;
-}
-
-// Request to get battery history from all peripherals
-// When sent to central, it triggers the behavior on all peripherals
-// which causes each peripheral to send battery history events back
-message RequestPeripheralBatteryHistoryRequest {
 }
 
 // A single battery history entry
@@ -58,7 +51,6 @@ message Request {
     oneof request_type {
         GetBatteryHistoryRequest get_history = 1;
         ClearBatteryHistoryRequest clear_history = 2;
-        RequestPeripheralBatteryHistoryRequest request_peripheral_history = 3;
     }
 }
 
