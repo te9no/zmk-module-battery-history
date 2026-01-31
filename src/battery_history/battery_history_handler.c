@@ -20,9 +20,7 @@
 #include <zmk/battery_history/battery_history.h>
 #include <zmk/battery_history/events/battery_history_entry_event.h>
 
-#if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY_SPLIT)
 #include <zmk/behavior.h>
-#endif
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -180,9 +178,9 @@ static int handle_clear_history_request(const zmk_battery_history_ClearBatteryHi
 static int handle_request_peripheral_history(
     const zmk_battery_history_RequestPeripheralBatteryHistoryRequest *req,
     zmk_battery_history_Response *resp) {
-    LOG_INF("Received request for battery history (requested peripheral_id=%d)", req->peripheral_id);
+    LOG_INF("Received request for battery history (requested peripheral_id=%d)",
+            req->peripheral_id);
 
-#if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY_SPLIT)
     // Invoke the battery history request behavior
     // This behavior has LOCALITY_GLOBAL, so ZMK will automatically:
     // 1. Execute it locally (central sends its battery history)
@@ -201,7 +199,6 @@ static int handle_request_peripheral_history(
     if (rc < 0 && rc != ZMK_BEHAVIOR_OPAQUE) {
         LOG_ERR("Failed to invoke battery history request behavior: %d", rc);
     }
-#endif
 
     // Return an empty success response to acknowledge the request
     // The actual data will come via notifications
@@ -213,9 +210,6 @@ static int handle_request_peripheral_history(
     resp->response_type.get_history = result;
     return 0;
 }
-
-// Buffer for notification payload
-static zmk_battery_history_Notification notification_buffer;
 
 /**
  * Encoder function for notification payload
@@ -269,23 +263,26 @@ int zmk_battery_history_send_notification(uint8_t source_id,
         LOG_ERR("Failed to get subsystem index");
         return -ENOENT;
     }
-
-    notification_buffer = (zmk_battery_history_Notification)zmk_battery_history_Notification_init_zero;
+    // Buffer for notification payload
+    zmk_battery_history_Notification notification_buffer =
+        zmk_battery_history_Notification_init_zero;
     notification_buffer.which_notification_type =
         zmk_battery_history_Notification_battery_history_tag;
     notification_buffer.notification_type.battery_history.source_id = source_id;
     notification_buffer.notification_type.battery_history.entry.timestamp = entry->timestamp;
-    notification_buffer.notification_type.battery_history.entry.battery_level = entry->battery_level;
+    notification_buffer.notification_type.battery_history.entry.battery_level =
+        entry->battery_level;
     notification_buffer.notification_type.battery_history.entry_index = entry_index;
     notification_buffer.notification_type.battery_history.total_entries = total_entries;
     notification_buffer.notification_type.battery_history.is_last = is_last;
 
     struct zmk_studio_custom_notification notif = {
         .subsystem_index = (uint8_t)subsystem_idx,
-        .encode_payload = {
-            .funcs.encode = encode_notification_payload,
-            .arg = &notification_buffer,
-        },
+        .encode_payload =
+            {
+                .funcs.encode = encode_notification_payload,
+                .arg = &notification_buffer,
+            },
     };
 
     LOG_DBG("Sending battery history notification: source=%d, idx=%d/%d, level=%d%%", source_id,
@@ -294,7 +291,6 @@ int zmk_battery_history_send_notification(uint8_t source_id,
     return raise_zmk_studio_custom_notification(notif);
 }
 
-#if IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY_SPLIT)
 /**
  * Listener for battery history entry events.
  * When an entry event is raised (from local or remote), send RPC notification.
@@ -320,4 +316,3 @@ static int battery_history_entry_listener(const zmk_event_t *eh) {
 
 ZMK_LISTENER(battery_history_entry, battery_history_entry_listener);
 ZMK_SUBSCRIPTION(battery_history_entry, zmk_battery_history_entry_event);
-#endif // IS_ENABLED(CONFIG_ZMK_BATTERY_HISTORY_SPLIT)
