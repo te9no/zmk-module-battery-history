@@ -503,7 +503,7 @@ static void battery_history_send_work_handler(struct k_work *work) {
         struct zmk_battery_history_entry entry;
         if (zmk_battery_history_get_entry(i, &entry) == 0) {
             struct zmk_battery_history_entry_event ev = {
-                .source = 0, // Will be set by central when received from peripheral
+                .source = ZMK_RELAY_EVENT_SOURCE_SELF,
                 .entry = entry,
                 .entry_index = (uint8_t)i,
                 .total_entries = (uint8_t)count,
@@ -563,6 +563,6 @@ SYS_INIT(battery_history_send_work_init, APPLICATION, CONFIG_APPLICATION_INIT_PR
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT)
 
+ZMK_RELAY_EVENT_HANDLE(zmk_battery_history_entry_event, bh, source);
 ZMK_RELAY_EVENT_PERIPHERAL_TO_CENTRAL(zmk_battery_history_entry_event, bh, source);
-
 #endif

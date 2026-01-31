@@ -8,16 +8,14 @@
  * - Statistics and estimated battery life
  */
 
-import { useContext, useState } from "react";
 import "./App.css";
 import { connect as serial_connect } from "@zmkfirmware/zmk-studio-ts-client/transport/serial";
+import { ZMKConnection } from "@cormoran/zmk-studio-react-hook";
+
 import {
-  ZMKConnection,
-  ZMKCustomSubsystem,
-  ZMKAppContext,
-} from "@cormoran/zmk-studio-react-hook";
-import { Request, Response } from "./proto/zmk/battery_history/battery_history";
-import { BatteryHistorySection, BATTERY_HISTORY_SUBSYSTEM } from "./components/BatteryHistorySection";
+  BatteryHistorySection,
+  BATTERY_HISTORY_SUBSYSTEM,
+} from "./components/BatteryHistorySection";
 
 // Custom subsystem identifier for battery history - must match firmware registration
 export const SUBSYSTEM_IDENTIFIER = BATTERY_HISTORY_SUBSYSTEM;
@@ -61,7 +59,8 @@ function App() {
               )}
 
               <p className="connect-hint">
-                Make sure your keyboard is connected and has Studio mode enabled.
+                Make sure your keyboard is connected and has Studio mode
+                enabled.
               </p>
             </div>
           </section>
@@ -74,7 +73,10 @@ function App() {
                   <span className="status-indicator connected"></span>
                   <span className="device-name">{deviceName}</span>
                 </div>
-                <button className="btn btn-secondary btn-small" onClick={disconnect}>
+                <button
+                  className="btn btn-secondary btn-small"
+                  onClick={disconnect}
+                >
                   Disconnect
                 </button>
               </div>
@@ -94,114 +96,6 @@ function App() {
         </p>
       </footer>
     </div>
-  );
-}
-
-export function RPCTestSection() {
-  const zmkApp = useContext(ZMKAppContext);
-  const [includeMetadata, setIncludeMetadata] = useState<boolean>(true);
-  const [response, setResponse] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  if (!zmkApp) return null;
-
-  const subsystem = zmkApp.findSubsystem(SUBSYSTEM_IDENTIFIER);
-
-  // Send a battery history request to the firmware
-  const sendBatteryHistoryRequest = async () => {
-    if (!zmkApp.state.connection || !subsystem) return;
-
-    setIsLoading(true);
-    setResponse(null);
-
-    try {
-      const service = new ZMKCustomSubsystem(
-        zmkApp.state.connection,
-        subsystem.index
-      );
-
-      // Create the request using ts-proto
-      const request = Request.create({
-        getHistory: {
-          includeMetadata: includeMetadata,
-        },
-      });
-
-      // Encode and send the request
-      const payload = Request.encode(request).finish();
-      const responsePayload = await service.callRPC(payload);
-
-      if (responsePayload) {
-        const resp = Response.decode(responsePayload);
-        console.log("Decoded response:", resp);
-
-        if (resp.getHistory) {
-          const entries = resp.getHistory.entries || [];
-          const metadata = resp.getHistory.metadata;
-          setResponse(
-            `Battery Level: ${resp.getHistory.currentBatteryLevel}%\n` +
-            `Entries: ${entries.length}\n` +
-            (metadata ? `Device: ${metadata.deviceName}\nInterval: ${metadata.recordingIntervalMinutes}min` : "")
-          );
-        } else if (resp.error) {
-          setResponse(`Error: ${resp.error.message}`);
-        }
-      }
-    } catch (error) {
-      console.error("RPC call failed:", error);
-      setResponse(
-        `Failed: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  if (!subsystem) {
-    return (
-      <section className="card">
-        <div className="warning-message">
-          <p>
-            ⚠️ Subsystem "{SUBSYSTEM_IDENTIFIER}" not found. Make sure your
-            firmware includes the battery history module.
-          </p>
-        </div>
-      </section>
-    );
-  }
-
-  return (
-    <section className="card">
-      <h2>RPC Test</h2>
-      <p>Send a battery history request to the firmware:</p>
-
-      <div className="input-group">
-        <label htmlFor="metadata-checkbox">
-          <input
-            id="metadata-checkbox"
-            type="checkbox"
-            checked={includeMetadata}
-            onChange={(e) => setIncludeMetadata(e.target.checked)}
-          />
-          Include Metadata
-        </label>
-      </div>
-
-      <button
-        className="btn btn-primary"
-        disabled={isLoading}
-        onClick={sendBatteryHistoryRequest}
-      >
-        {isLoading ? "⏳ Sending..." : "📤 Send Request"}
-      </button>
-
-      {response && (
-        <div className="response-box">
-          <h3>Response from Firmware:</h3>
-          <pre>{response}</pre>
-        </div>
-      )}
-    </section>
   );
 }
 

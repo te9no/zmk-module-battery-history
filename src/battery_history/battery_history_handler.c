@@ -131,7 +131,6 @@ static int handle_get_history_request(const zmk_battery_history_GetBatteryHistor
     // The actual data will come via notifications
     zmk_battery_history_GetBatteryHistoryResponse result =
         zmk_battery_history_GetBatteryHistoryResponse_init_zero;
-    result.entries_count = 0;
 
     resp->which_response_type = zmk_battery_history_Response_get_history_tag;
     resp->response_type.get_history = result;
@@ -177,7 +176,6 @@ static bool encode_notification_payload(pb_ostream_t *stream, const pb_field_t *
     if (!pb_encode_varint(stream, size)) {
         return false;
     }
-
     return pb_encode(stream, zmk_battery_history_Notification_fields, notif);
 }
 
@@ -216,6 +214,7 @@ int zmk_battery_history_send_notification(uint8_t source_id,
     notification_buffer.which_notification_type =
         zmk_battery_history_Notification_battery_history_tag;
     notification_buffer.notification_type.battery_history.source_id = source_id;
+    notification_buffer.notification_type.battery_history.has_entry = true;
     notification_buffer.notification_type.battery_history.entry.timestamp = entry->timestamp;
     notification_buffer.notification_type.battery_history.entry.battery_level =
         entry->battery_level;
@@ -248,11 +247,13 @@ static int battery_history_entry_listener(const zmk_event_t *eh) {
         return ZMK_EV_EVENT_BUBBLE;
     }
 
-    LOG_DBG("Battery history entry event: source=%d, idx=%d/%d", ev->source, ev->entry_index,
+    uint8_t source_id = ev->source == ZMK_RELAY_EVENT_SOURCE_SELF ? 0 : ev->source;
+
+    LOG_DBG("Battery history entry event: source=%d, idx=%d/%d", source_id, ev->entry_index,
             ev->total_entries);
 
     // Send RPC notification for this entry
-    int rc = zmk_battery_history_send_notification(ev->source, &ev->entry, ev->entry_index,
+    int rc = zmk_battery_history_send_notification(source_id, &ev->entry, ev->entry_index,
                                                    ev->total_entries, ev->is_last);
     if (rc < 0) {
         LOG_ERR("Failed to send battery history notification: %d", rc);

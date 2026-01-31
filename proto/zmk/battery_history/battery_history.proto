@@ -4,8 +4,7 @@ package zmk.battery_history;
 
 // Request to get battery history from all devices (central and peripherals)
 // Data is returned via notifications as streaming entries
-message GetBatteryHistoryRequest {
-}
+message GetBatteryHistoryRequest {}
 
 // A single battery history entry
 message BatteryHistoryEntry {
@@ -26,19 +25,11 @@ message DeviceMetadata {
 }
 
 // Response containing battery history data
-message GetBatteryHistoryResponse {
-    // Array of battery history entries, ordered from oldest to newest
-    repeated BatteryHistoryEntry entries = 1;
-    // Optional device metadata
-    DeviceMetadata metadata = 2;
-    // Current battery level percentage
-    uint32 current_battery_level = 3;
-}
+message GetBatteryHistoryResponse {}
 
 // Request to clear battery history from device storage
 // (For future use when backend sync is implemented)
-message ClearBatteryHistoryRequest {
-}
+message ClearBatteryHistoryRequest {}
 
 // Response for clear operation
 message ClearBatteryHistoryResponse {
@@ -55,9 +46,7 @@ message Request {
 }
 
 // Error response
-message ErrorResponse {
-    string message = 1;
-}
+message ErrorResponse { string message = 1; }
 
 // Main response message
 message Response {
@@ -85,7 +74,5 @@ message BatteryHistoryNotification {
 
 // Notification wrapper - sent as custom notification payload
 message Notification {
-    oneof notification_type {
-        BatteryHistoryNotification battery_history = 1;
-    }
+    oneof notification_type { BatteryHistoryNotification battery_history = 1; }
 }
