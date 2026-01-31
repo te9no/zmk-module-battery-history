@@ -3,9 +3,10 @@
  *
  * Main component for displaying battery history data from a ZMK device.
  * Handles data fetching, display, and interaction with the device.
+ * Supports split keyboards with multiple keyboard halves via notifications.
  */
 
-import { useContext, useState, useCallback, useEffect } from "react";
+import { useContext, useState, useCallback, useEffect, useRef } from "react";
 import {
   ZMKAppContext,
   ZMKCustomSubsystem,
@@ -13,7 +14,9 @@ import {
 import {
   Request,
   Response,
-  GetBatteryHistoryResponse,
+  Notification,
+  BatteryHistoryEntry,
+  DeviceMetadata,
 } from "../proto/zmk/battery_history/battery_history";
 import { BatteryHistoryChart } from "./BatteryHistoryChart";
 import { BatteryIndicator } from "./BatteryIndicator";
@@ -22,48 +25,174 @@ import "./BatteryHistorySection.css";
 // Custom subsystem identifier - must match firmware registration
 export const BATTERY_HISTORY_SUBSYSTEM = "zmk__battery_history";
 
+// Source names for display
+const SOURCE_NAMES: Record<number, string> = {
+  0: "Central",
+  1: "Peripheral 1",
+  2: "Peripheral 2",
+};
+
+interface BatteryHistoryData {
+  entries: BatteryHistoryEntry[];
+  metadata?: DeviceMetadata;
+  currentBatteryLevel: number;
+}
+
+interface StreamingProgress {
+  current: number;
+  total: number;
+}
+
 interface BatteryHistoryState {
-  data: GetBatteryHistoryResponse | null;
+  // Data per source ID (0 = central, 1+ = peripherals)
+  dataBySource: Record<number, BatteryHistoryData>;
+  // Currently selected source for display
+  selectedSource: number;
   isLoading: boolean;
   error: string | null;
   lastFetched: Date | null;
+  // Streaming progress per source for parallel notifications
+  streamingProgressBySource: Record<number, StreamingProgress>;
 }
 
 export function BatteryHistorySection() {
   const zmkApp = useContext(ZMKAppContext);
   const [state, setState] = useState<BatteryHistoryState>({
-    data: null,
+    dataBySource: {},
+    selectedSource: 0,
     isLoading: false,
     error: null,
     lastFetched: null,
+    streamingProgressBySource: {},
   });
+
+  // Buffer for accumulating streaming entries per source
+  const streamingBuffersRef = useRef<Record<number, BatteryHistoryEntry[]>>({});
 
   const subsystem = zmkApp?.findSubsystem(BATTERY_HISTORY_SUBSYSTEM);
 
   /**
-   * Fetch battery history from the device
+   * Handle incoming notifications for battery history entries
+   * Supports parallel notifications from multiple sources
+   */
+  useEffect(() => {
+    if (!zmkApp || !subsystem) return;
+
+    const unsubscribe = zmkApp.onNotification({
+      type: "custom",
+      subsystemIndex: subsystem.index,
+      callback: (notification) => {
+        if (!notification.payload) return;
+
+        try {
+          const decoded = Notification.decode(notification.payload);
+          if (decoded.batteryHistory) {
+            const entry = decoded.batteryHistory;
+            const sourceId = entry.sourceId;
+
+            console.log(
+              `Received battery history notification: source=${sourceId}, idx=${entry.entryIndex}/${entry.totalEntries}, last=${entry.isLast}`,
+            );
+
+            // On first entry for this source, set up streaming state
+            if (entry.entryIndex === 0) {
+              streamingBuffersRef.current[sourceId] = [];
+              setState((prev) => ({
+                ...prev,
+                streamingProgressBySource: {
+                  ...prev.streamingProgressBySource,
+                  [sourceId]: { current: 0, total: entry.totalEntries },
+                },
+              }));
+            }
+
+            // Add entry to source-specific buffer if valid
+            if (entry.entry && entry.totalEntries > 0) {
+              if (!streamingBuffersRef.current[sourceId]) {
+                streamingBuffersRef.current[sourceId] = [];
+              }
+              streamingBuffersRef.current[sourceId].push(entry.entry);
+              setState((prev) => ({
+                ...prev,
+                streamingProgressBySource: {
+                  ...prev.streamingProgressBySource,
+                  [sourceId]: {
+                    current: entry.entryIndex + 1,
+                    total: entry.totalEntries,
+                  },
+                },
+              }));
+            }
+
+            // On last entry for this source, finalize the data
+            if (entry.isLast) {
+              const entries = [
+                ...(streamingBuffersRef.current[sourceId] || []),
+              ];
+              delete streamingBuffersRef.current[sourceId];
+
+              setState((prev) => {
+                // Remove this source from streaming progress
+                const newStreamingProgress = {
+                  ...prev.streamingProgressBySource,
+                };
+                delete newStreamingProgress[sourceId];
+
+                return {
+                  ...prev,
+                  dataBySource: {
+                    ...prev.dataBySource,
+                    [sourceId]: {
+                      entries,
+                      currentBatteryLevel:
+                        entries.length > 0
+                          ? entries[entries.length - 1].batteryLevel
+                          : 0,
+                    },
+                  },
+                  streamingProgressBySource: newStreamingProgress,
+                  lastFetched: new Date(),
+                };
+              });
+            }
+          }
+        } catch (error) {
+          console.error("Failed to decode notification:", error);
+        }
+      },
+    });
+
+    return unsubscribe;
+  }, [zmkApp, subsystem]);
+
+  /**
+   * Fetch battery history from all devices (central and peripherals)
+   * Data arrives via parallel notifications from each source
    */
   const fetchBatteryHistory = useCallback(async () => {
     if (!zmkApp?.state.connection || !subsystem) return;
 
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
+    setState((prev) => ({
+      ...prev,
+      isLoading: true,
+      error: null,
+    }));
+    // Clear all streaming buffers
+    streamingBuffersRef.current = {};
 
     try {
       const service = new ZMKCustomSubsystem(
         zmkApp.state.connection,
-        subsystem.index
+        subsystem.index,
       );
 
-      // Create the request
       const request = Request.create({
-        getHistory: {
-          includeMetadata: true,
-        },
+        getHistory: {},
       });
 
-      // Encode and send the request
       const payload = Request.encode(request).finish();
       const responsePayload = await service.callRPC(payload);
+      // Response is just acknowledgement, data comes via notifications
 
       if (responsePayload) {
         const resp = Response.decode(responsePayload);
@@ -75,21 +204,22 @@ export function BatteryHistorySection() {
             isLoading: false,
             error: resp.error?.message || "Unknown error",
           }));
-        } else if (resp.getHistory) {
-          setState({
-            data: resp.getHistory,
-            isLoading: false,
-            error: null,
-            lastFetched: new Date(),
-          });
+          return;
         }
       }
+
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+      }));
     } catch (error) {
       console.error("Failed to fetch battery history:", error);
       setState((prev) => ({
         ...prev,
         isLoading: false,
-        error: error instanceof Error ? error.message : "Failed to fetch data",
+        streamingProgressBySource: {},
+        error:
+          error instanceof Error ? error.message : "Failed to request data",
       }));
     }
   }, [zmkApp, subsystem]);
@@ -101,7 +231,7 @@ export function BatteryHistorySection() {
     if (!zmkApp?.state.connection || !subsystem) return;
 
     const confirmed = window.confirm(
-      "Are you sure you want to clear all battery history data from the device?"
+      "Are you sure you want to clear all battery history data from the device?",
     );
     if (!confirmed) return;
 
@@ -110,7 +240,7 @@ export function BatteryHistorySection() {
     try {
       const service = new ZMKCustomSubsystem(
         zmkApp.state.connection,
-        subsystem.index
+        subsystem.index,
       );
 
       const request = Request.create({
@@ -130,7 +260,12 @@ export function BatteryHistorySection() {
             error: resp.error?.message || "Unknown error",
           }));
         } else if (resp.clearHistory) {
-          // Refetch to show empty state
+          // Clear local data and refetch
+          setState((prev) => ({
+            ...prev,
+            dataBySource: {},
+            isLoading: false,
+          }));
           await fetchBatteryHistory();
         }
       }
@@ -146,10 +281,14 @@ export function BatteryHistorySection() {
 
   // Auto-fetch on mount when subsystem is available
   useEffect(() => {
-    if (subsystem && !state.data && !state.isLoading) {
+    if (
+      subsystem &&
+      Object.keys(state.dataBySource).length === 0 &&
+      !state.isLoading
+    ) {
       fetchBatteryHistory();
     }
-  }, [subsystem, state.data, state.isLoading, fetchBatteryHistory]);
+  }, [subsystem, state.dataBySource, state.isLoading, fetchBatteryHistory]);
 
   if (!zmkApp) return null;
 
@@ -157,9 +296,7 @@ export function BatteryHistorySection() {
     return (
       <section className="card battery-section">
         <div className="warning-message">
-          <p>
-            ⚠️ Battery History module not found on this device.
-          </p>
+          <p>⚠️ Battery History module not found on this device.</p>
           <p className="warning-hint">
             Make sure your firmware is compiled with{" "}
             <code>CONFIG_ZMK_BATTERY_HISTORY=y</code> and{" "}
@@ -170,7 +307,18 @@ export function BatteryHistorySection() {
     );
   }
 
-  const { data, isLoading, error, lastFetched } = state;
+  const {
+    dataBySource,
+    selectedSource,
+    isLoading,
+    error,
+    lastFetched,
+    streamingProgressBySource,
+  } = state;
+  const data = dataBySource[selectedSource];
+  const availableSources = Object.keys(dataBySource).map(Number);
+  const streamingSources = Object.keys(streamingProgressBySource).map(Number);
+  const isStreaming = streamingSources.length > 0;
 
   return (
     <section className="card battery-section">
@@ -180,7 +328,7 @@ export function BatteryHistorySection() {
           <button
             className="btn btn-icon"
             onClick={fetchBatteryHistory}
-            disabled={isLoading}
+            disabled={isLoading || isStreaming}
             title="Refresh data"
           >
             <span className={isLoading ? "spin" : ""}>🔄</span>
@@ -196,6 +344,55 @@ export function BatteryHistorySection() {
         </div>
       </div>
 
+      {/* Source selector */}
+      {availableSources.length > 1 && (
+        <div className="source-selector">
+          <span className="selector-label">Keyboard half:</span>
+          <div className="source-buttons">
+            {availableSources.map((sourceId) => (
+              <button
+                key={sourceId}
+                className={`btn btn-small ${
+                  selectedSource === sourceId ? "btn-primary" : "btn-secondary"
+                }`}
+                onClick={() =>
+                  setState((prev) => ({ ...prev, selectedSource: sourceId }))
+                }
+              >
+                {SOURCE_NAMES[sourceId] || `Source ${sourceId}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Streaming progress - show all active streams */}
+      {streamingSources.map((sourceId) => {
+        const progress = streamingProgressBySource[sourceId];
+        return (
+          <div key={sourceId} className="streaming-progress">
+            <span className="progress-label">
+              Receiving data from{" "}
+              {SOURCE_NAMES[sourceId] || `Source ${sourceId}`}...
+            </span>
+            <div className="progress-bar">
+              <div
+                className="progress-fill"
+                style={{
+                  width:
+                    progress.total > 0
+                      ? `${(progress.current / progress.total) * 100}%`
+                      : "0%",
+                }}
+              />
+            </div>
+            <span className="progress-text">
+              {progress.current} / {progress.total}
+            </span>
+          </div>
+        );
+      })}
+
       {error && (
         <div className="error-message">
           <p>🚨 {error}</p>
@@ -207,6 +404,11 @@ export function BatteryHistorySection() {
         <BatteryIndicator
           level={data?.currentBatteryLevel ?? 0}
           isLoading={isLoading && !data}
+          label={
+            availableSources.length > 1
+              ? SOURCE_NAMES[selectedSource] || `Source ${selectedSource}`
+              : undefined
+          }
         />
 
         {data?.metadata && (
@@ -231,10 +433,12 @@ export function BatteryHistorySection() {
 
       {/* Battery History Chart */}
       <div className="chart-section">
-        <h3>Battery Level Over Time</h3>
-        <BatteryHistoryChart
-          entries={data?.entries ?? []}
-        />
+        <h3>
+          Battery Level Over Time
+          {availableSources.length > 1 &&
+            ` (${SOURCE_NAMES[selectedSource] || `Source ${selectedSource}`})`}
+        </h3>
+        <BatteryHistoryChart entries={data?.entries ?? []} />
       </div>
 
       {/* Statistics */}
@@ -257,18 +461,16 @@ export function BatteryHistorySection() {
 /**
  * Battery statistics component
  */
-function BatteryStats({
-  entries,
-}: {
-  entries: GetBatteryHistoryResponse["entries"];
-}) {
+function BatteryStats({ entries }: { entries: BatteryHistoryEntry[] }) {
   if (entries.length < 2) return null;
 
   // Calculate statistics
   const levels = entries.map((e) => e.batteryLevel);
   const minLevel = Math.min(...levels);
   const maxLevel = Math.max(...levels);
-  const avgLevel = Math.round(levels.reduce((a, b) => a + b, 0) / levels.length);
+  const avgLevel = Math.round(
+    levels.reduce((a, b) => a + b, 0) / levels.length,
+  );
 
   // Estimate drain rate (percentage per hour)
   const firstEntry = entries[0];

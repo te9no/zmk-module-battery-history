@@ -59,20 +59,14 @@ test/
 The protobuf schema is defined in `../proto/zmk/battery_history/battery_history.proto`:
 
 ```proto
-message GetBatteryHistoryRequest {
-    bool include_metadata = 1;
-}
+message GetBatteryHistoryRequest { }
 
 message BatteryHistoryEntry {
     uint32 timestamp = 1;
     uint32 battery_level = 2;
 }
 
-message GetBatteryHistoryResponse {
-    repeated BatteryHistoryEntry entries = 1;
-    DeviceMetadata metadata = 2;
-    uint32 current_battery_level = 3;
-}
+message GetBatteryHistoryResponse { }
 ```
 
 ### Code Generation

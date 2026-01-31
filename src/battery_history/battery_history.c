@@ -14,6 +14,7 @@
 #include <zmk/battery.h>
 #include <zmk/usb.h>
 #include <zmk/battery_history/battery_history.h>
+#include <zmk/battery_history/events/battery_history_entry_event.h>
 #include <zmk/event_manager.h>
 #include <zmk/events/activity_state_changed.h>
 #include <zmk/events/battery_state_changed.h>
@@ -477,3 +478,91 @@ int zmk_battery_history_get_interval(void) { return CONFIG_ZMK_BATTERY_HISTORY_I
 int zmk_battery_history_get_max_entries(void) { return MAX_ENTRIES; }
 
 int zmk_battery_history_save(void) { return save_history(); }
+
+ZMK_EVENT_IMPL(zmk_battery_history_entry_event);
+
+// Work item for sending battery history entries
+struct battery_history_send_work_data {
+    struct k_work_delayable work;
+    int next_index;
+    int total_count;
+    bool is_sending;
+};
+
+static struct battery_history_send_work_data send_work_data;
+
+static void battery_history_send_work_handler(struct k_work *work) {
+    struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+    struct battery_history_send_work_data *data =
+        CONTAINER_OF(dwork, struct battery_history_send_work_data, work);
+
+    int i = data->next_index;
+    int count = data->total_count;
+
+    if (i < count) {
+        struct zmk_battery_history_entry entry;
+        if (zmk_battery_history_get_entry(i, &entry) == 0) {
+            struct zmk_battery_history_entry_event ev = {
+                .source = ZMK_RELAY_EVENT_SOURCE_SELF,
+                .entry = entry,
+                .entry_index = (uint8_t)i,
+                .total_entries = (uint8_t)count,
+                .is_last = (i == count - 1),
+            };
+
+            int rc = raise_zmk_battery_history_entry_event(ev);
+            if (rc != 0) {
+                LOG_ERR("Failed to raise battery history entry event: %d", rc);
+                return;
+            }
+        } else {
+            LOG_ERR("Failed to get entry %d", i);
+        }
+
+        data->next_index++;
+        k_work_schedule(&data->work, K_MSEC(10));
+    } else if (count == 0) {
+        // Send empty completion event
+        struct zmk_battery_history_entry_event ev = {
+            .source = 0,
+            .entry = {.timestamp = 0, .battery_level = 0},
+            .entry_index = 0,
+            .total_entries = 0,
+            .is_last = true,
+        };
+        raise_zmk_battery_history_entry_event(ev);
+        data->is_sending = false;
+    } else {
+        data->is_sending = false;
+        LOG_INF("Completed sending battery history entries");
+    }
+}
+
+int zmk_battery_history_trigger_send(void) {
+    if (send_work_data.is_sending) {
+        LOG_WRN("Battery history send already in progress");
+        return -EBUSY;
+    }
+    int count = history_count;
+    LOG_INF("Triggering battery history send: %d entries", count);
+
+    send_work_data.next_index = 0;
+    send_work_data.total_count = count;
+    // Required to defer to avoid occupying workqueue thread
+    // Otherwise, BLE transmissions are blocked
+    k_work_schedule(&send_work_data.work, K_NO_WAIT);
+
+    return 0;
+}
+
+int battery_history_send_work_init(void) {
+    k_work_init_delayable(&send_work_data.work, battery_history_send_work_handler);
+    return 0;
+}
+SYS_INIT(battery_history_send_work_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
+
+#if IS_ENABLED(CONFIG_ZMK_SPLIT)
+
+ZMK_RELAY_EVENT_HANDLE(zmk_battery_history_entry_event, bh, source);
+ZMK_RELAY_EVENT_PERIPHERAL_TO_CENTRAL(zmk_battery_history_entry_event, bh, source);
+#endif
