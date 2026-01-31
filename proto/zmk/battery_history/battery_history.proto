@@ -8,12 +8,10 @@ message GetBatteryHistoryRequest {
     bool include_metadata = 1;
 }
 
-// Request to get battery history from a specific peripheral
-// When sent to central, it triggers the behavior on the peripheral
-// which causes the peripheral to send battery history events back
+// Request to get battery history from all peripherals
+// When sent to central, it triggers the behavior on all peripherals
+// which causes each peripheral to send battery history events back
 message RequestPeripheralBatteryHistoryRequest {
-    // Peripheral source ID (0-based index)
-    uint32 peripheral_id = 1;
 }
 
 // A single battery history entry

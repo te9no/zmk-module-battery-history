@@ -38,6 +38,11 @@ interface BatteryHistoryData {
   currentBatteryLevel: number;
 }
 
+interface StreamingProgress {
+  current: number;
+  total: number;
+}
+
 interface BatteryHistoryState {
   // Data per source ID (0 = central, 1+ = peripherals)
   dataBySource: Record<number, BatteryHistoryData>;
@@ -46,9 +51,8 @@ interface BatteryHistoryState {
   isLoading: boolean;
   error: string | null;
   lastFetched: Date | null;
-  // Streaming state for receiving notifications
-  streamingSource: number | null;
-  streamingProgress: { current: number; total: number } | null;
+  // Streaming progress per source for parallel notifications
+  streamingProgressBySource: Record<number, StreamingProgress>;
 }
 
 export function BatteryHistorySection() {
@@ -59,17 +63,17 @@ export function BatteryHistorySection() {
     isLoading: false,
     error: null,
     lastFetched: null,
-    streamingSource: null,
-    streamingProgress: null,
+    streamingProgressBySource: {},
   });
 
-  // Buffer for accumulating streaming entries
-  const streamingBufferRef = useRef<BatteryHistoryEntry[]>([]);
+  // Buffer for accumulating streaming entries per source
+  const streamingBuffersRef = useRef<Record<number, BatteryHistoryEntry[]>>({});
 
   const subsystem = zmkApp?.findSubsystem(BATTERY_HISTORY_SUBSYSTEM);
 
   /**
    * Handle incoming notifications for battery history entries
+   * Supports parallel notifications from multiple sources
    */
   useEffect(() => {
     if (!zmkApp || !subsystem) return;
@@ -90,49 +94,62 @@ export function BatteryHistorySection() {
               `Received battery history notification: source=${sourceId}, idx=${entry.entryIndex}/${entry.totalEntries}, last=${entry.isLast}`
             );
 
-            // On first entry, set up streaming state
+            // On first entry for this source, set up streaming state
             if (entry.entryIndex === 0) {
-              streamingBufferRef.current = [];
+              streamingBuffersRef.current[sourceId] = [];
               setState((prev) => ({
                 ...prev,
-                streamingSource: sourceId,
-                streamingProgress: { current: 0, total: entry.totalEntries },
-              }));
-            }
-
-            // Add entry to buffer if valid
-            if (entry.entry && entry.totalEntries > 0) {
-              streamingBufferRef.current.push(entry.entry);
-              setState((prev) => ({
-                ...prev,
-                streamingProgress: {
-                  current: entry.entryIndex + 1,
-                  total: entry.totalEntries,
+                streamingProgressBySource: {
+                  ...prev.streamingProgressBySource,
+                  [sourceId]: { current: 0, total: entry.totalEntries },
                 },
               }));
             }
 
-            // On last entry, finalize the data
-            if (entry.isLast) {
-              const entries = [...streamingBufferRef.current];
-              streamingBufferRef.current = [];
-
+            // Add entry to source-specific buffer if valid
+            if (entry.entry && entry.totalEntries > 0) {
+              if (!streamingBuffersRef.current[sourceId]) {
+                streamingBuffersRef.current[sourceId] = [];
+              }
+              streamingBuffersRef.current[sourceId].push(entry.entry);
               setState((prev) => ({
                 ...prev,
-                dataBySource: {
-                  ...prev.dataBySource,
+                streamingProgressBySource: {
+                  ...prev.streamingProgressBySource,
                   [sourceId]: {
-                    entries,
-                    currentBatteryLevel:
-                      entries.length > 0
-                        ? entries[entries.length - 1].batteryLevel
-                        : 0,
+                    current: entry.entryIndex + 1,
+                    total: entry.totalEntries,
                   },
                 },
-                streamingSource: null,
-                streamingProgress: null,
-                lastFetched: new Date(),
               }));
+            }
+
+            // On last entry for this source, finalize the data
+            if (entry.isLast) {
+              const entries = [...(streamingBuffersRef.current[sourceId] || [])];
+              delete streamingBuffersRef.current[sourceId];
+
+              setState((prev) => {
+                // Remove this source from streaming progress
+                const newStreamingProgress = { ...prev.streamingProgressBySource };
+                delete newStreamingProgress[sourceId];
+
+                return {
+                  ...prev,
+                  dataBySource: {
+                    ...prev.dataBySource,
+                    [sourceId]: {
+                      entries,
+                      currentBatteryLevel:
+                        entries.length > 0
+                          ? entries[entries.length - 1].batteryLevel
+                          : 0,
+                    },
+                  },
+                  streamingProgressBySource: newStreamingProgress,
+                  lastFetched: new Date(),
+                };
+              });
             }
           }
         } catch (error) {
@@ -207,20 +224,20 @@ export function BatteryHistorySection() {
   }, [zmkApp, subsystem]);
 
   /**
-   * Request battery history from a specific peripheral
+   * Request battery history from all peripherals
+   * Data arrives via parallel notifications from each source
    */
   const requestPeripheralHistory = useCallback(
-    async (peripheralId: number) => {
+    async () => {
       if (!zmkApp?.state.connection || !subsystem) return;
 
       setState((prev) => ({
         ...prev,
         isLoading: true,
         error: null,
-        streamingSource: peripheralId,
-        streamingProgress: { current: 0, total: 0 },
       }));
-      streamingBufferRef.current = [];
+      // Clear all streaming buffers
+      streamingBuffersRef.current = {};
 
       try {
         const service = new ZMKCustomSubsystem(
@@ -229,9 +246,7 @@ export function BatteryHistorySection() {
         );
 
         const request = Request.create({
-          requestPeripheralHistory: {
-            peripheralId,
-          },
+          requestPeripheralHistory: {},
         });
 
         const payload = Request.encode(request).finish();
@@ -247,12 +262,11 @@ export function BatteryHistorySection() {
         setState((prev) => ({
           ...prev,
           isLoading: false,
-          streamingSource: null,
-          streamingProgress: null,
+          streamingProgressBySource: {},
           error:
             error instanceof Error
               ? error.message
-              : "Failed to request data from peripheral",
+              : "Failed to request data from peripherals",
         }));
       }
     },
@@ -339,11 +353,12 @@ export function BatteryHistorySection() {
     isLoading,
     error,
     lastFetched,
-    streamingSource,
-    streamingProgress,
+    streamingProgressBySource,
   } = state;
   const data = dataBySource[selectedSource];
   const availableSources = Object.keys(dataBySource).map(Number);
+  const streamingSources = Object.keys(streamingProgressBySource).map(Number);
+  const isStreaming = streamingSources.length > 0;
 
   return (
     <section className="card battery-section">
@@ -360,9 +375,9 @@ export function BatteryHistorySection() {
           </button>
           <button
             className="btn btn-icon"
-            onClick={() => requestPeripheralHistory(1)}
-            disabled={isLoading || streamingSource !== null}
-            title="Request peripheral 1 data"
+            onClick={() => requestPeripheralHistory()}
+            disabled={isLoading || isStreaming}
+            title="Request all peripheral data"
           >
             📡
           </button>
@@ -399,27 +414,30 @@ export function BatteryHistorySection() {
         </div>
       )}
 
-      {/* Streaming progress */}
-      {streamingProgress && streamingSource !== null && (
-        <div className="streaming-progress">
-          <span className="progress-label">
-            Receiving data from {SOURCE_NAMES[streamingSource] || `Source ${streamingSource}`}...
-          </span>
-          <div className="progress-bar">
-            <div
-              className="progress-fill"
-              style={{
-                width: streamingProgress.total > 0
-                  ? `${(streamingProgress.current / streamingProgress.total) * 100}%`
-                  : "0%",
-              }}
-            />
+      {/* Streaming progress - show all active streams */}
+      {streamingSources.map((sourceId) => {
+        const progress = streamingProgressBySource[sourceId];
+        return (
+          <div key={sourceId} className="streaming-progress">
+            <span className="progress-label">
+              Receiving data from {SOURCE_NAMES[sourceId] || `Source ${sourceId}`}...
+            </span>
+            <div className="progress-bar">
+              <div
+                className="progress-fill"
+                style={{
+                  width: progress.total > 0
+                    ? `${(progress.current / progress.total) * 100}%`
+                    : "0%",
+                }}
+              />
+            </div>
+            <span className="progress-text">
+              {progress.current} / {progress.total}
+            </span>
           </div>
-          <span className="progress-text">
-            {streamingProgress.current} / {streamingProgress.total}
-          </span>
-        </div>
-      )}
+        );
+      })}
 
       {error && (
         <div className="error-message">

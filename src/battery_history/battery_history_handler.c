@@ -178,8 +178,7 @@ static int handle_clear_history_request(const zmk_battery_history_ClearBatteryHi
 static int handle_request_peripheral_history(
     const zmk_battery_history_RequestPeripheralBatteryHistoryRequest *req,
     zmk_battery_history_Response *resp) {
-    LOG_INF("Received request for battery history (requested peripheral_id=%d)",
-            req->peripheral_id);
+    LOG_INF("Received request for battery history from all peripherals");
 
     // Invoke the battery history request behavior
     // This behavior has LOCALITY_GLOBAL, so ZMK will automatically:

@@ -44,7 +44,7 @@ describe("BatteryHistorySection Component", () => {
 
       // Check for action buttons - updated titles for split keyboard support
       expect(screen.getByTitle(/Refresh central data/i)).toBeInTheDocument();
-      expect(screen.getByTitle(/Request peripheral 1 data/i)).toBeInTheDocument();
+      expect(screen.getByTitle(/Request all peripheral data/i)).toBeInTheDocument();
       expect(screen.getByTitle(/Clear history/i)).toBeInTheDocument();
     });
   });
