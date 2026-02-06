@@ -41,7 +41,6 @@ Add to your `config/<shield>.conf`:
 # Enable dependencies
 CONFIG_ZMK_BATTERY_REPORTING=y
 CONFIG_SETTINGS=y
-CONFIG_SETTINGS_RUNTIME=y
 
 # Enable battery history tracking
 CONFIG_ZMK_BATTERY_HISTORY=y
@@ -59,15 +58,18 @@ CONFIG_ZMK_BATTERY_HISTORY_STUDIO_RPC=y
 
 ## Configuration Options
 
-| Config                                             | Default | Description                                                        |
-| -------------------------------------------------- | ------- | ------------------------------------------------------------------ |
-| `CONFIG_ZMK_BATTERY_HISTORY_MAX_ENTRIES`           | 192     | Maximum stored entries (~8 days at 1hr intervals)                  |
-| `CONFIG_ZMK_BATTERY_HISTORY_INTERVAL_MINUTES`      | 5       | Recording interval in minutes (to memory)                          |
-| `CONFIG_ZMK_BATTERY_HISTORY_SAVE_INTERVAL_MINUTES` | 5       | Battery history forced save interval in minutes (to flush storage) |
-| `CONFIG_ZMK_BATTERY_HISTORY_SAVE_LEVEL_THRESHOLD`  | 2       | Battery level change threshold for saving (percentage)             |
-| `CONFIG_ZMK_BATTERY_HISTORY_FORCE_SAVE_ON_SLEEP`   | 2       | Force save battery history on sleep (percentage)                   |
-| `CONFIG_ZMK_BATTERY_IGNORE_ZERO_LEVEL`             | y       | Ignore zero percent battery level readings                         |
-| `CONFIG_ZMK_BATTERY_SKIP_IF_USB_POWERED`           | y       | Skip battery history recording when USB powered                    |
+| Config                                                   | Default | Description                                                                       |
+| -------------------------------------------------------- | ------- | --------------------------------------------------------------------------------- |
+| `CONFIG_ZMK_BATTERY_HISTORY_MAX_ENTRIES`                 | 192     | Maximum stored entries (~8 days at 1hr intervals)                                 |
+| `CONFIG_ZMK_BATTERY_HISTORY_INTERVAL_MINUTES`            | 5       | Interval in minutes to check and record battery level (to memory)                 |
+| `CONFIG_ZMK_BATTERY_HISTORY_LEVEL_THRESHOLD`             | 1       | Recorded if level change is equal or more than the threshold (percentage)         |
+| `ZMK_BATTERY_HISTORY_RECORD_SAME_LEVEL_INTERVAL_MINUTES` | 60      | Recorded in this interval even if level is not changed                            |
+| `CONFIG_ZMK_BATTERY_HISTORY_SAVE_INTERVAL_MINUTES`       | 120     | Battery history forced save interval in minutes (to flush storage)                |
+| `CONFIG_ZMK_BATTERY_HISTORY_SAVE_LEVEL_THRESHOLD`        | 2       | Flush to storage if level change is equal or more than the threshold (percentage) |
+| `CONFIG_ZMK_BATTERY_HISTORY_FORCE_SAVE_ON_SLEEP`         | y       | Force save battery history on sleep                                               |
+| `ZMK_BATTERY_HISTORY_FORCE_SAVE_IF_EMPTY`                | y       | Force save battery history if no entry exists yet                                 |
+| `CONFIG_ZMK_BATTERY_IGNORE_ZERO_LEVEL`                   | y       | Ignore zero percent battery level readings                                        |
+| `CONFIG_ZMK_BATTERY_SKIP_IF_USB_POWERED`                 | y       | Skip battery history recording when USB powered                                   |
 
 ## Web UI
 
