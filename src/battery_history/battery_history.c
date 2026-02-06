@@ -23,14 +23,10 @@ LOG_MODULE_REGISTER(zmk_battery_history, CONFIG_ZMK_LOG_LEVEL);
 
 #define MAX_ENTRIES CONFIG_ZMK_BATTERY_HISTORY_MAX_ENTRIES
 #define RECORDING_INTERVAL_MS (CONFIG_ZMK_BATTERY_HISTORY_INTERVAL_MINUTES * 60 * 1000)
+#define RECORDING_SAME_LEVEL_INTERVAL_SEC                                                          \
+    (CONFIG_ZMK_BATTERY_HISTORY_RECORD_SAME_LEVEL_INTERVAL_MINUTES * 60)
 #define SAVE_INTERVAL_SEC (CONFIG_ZMK_BATTERY_HISTORY_SAVE_INTERVAL_MINUTES * 60)
 #define SAVE_LEVEL_THRESHOLD CONFIG_ZMK_BATTERY_HISTORY_SAVE_LEVEL_THRESHOLD
-
-// Minimum time interval (in seconds) before recording same battery level
-// We use 4x the recording interval to reduce redundant entries when battery is
-// stable For example: with 5min interval, we skip same-level records unless 20
-// minutes have passed
-#define MIN_SAME_LEVEL_INTERVAL_SEC (CONFIG_ZMK_BATTERY_HISTORY_INTERVAL_MINUTES * 60 * 4)
 
 // Circular buffer for battery history
 static struct zmk_battery_history_entry history_buffer[MAX_ENTRIES];
@@ -43,8 +39,10 @@ static int unsaved_count = 0; // Number of entries not yet saved to flash
 static int first_unsaved_idx = -1;
 
 // Battery level at last save (for threshold-based saving)
-static uint8_t last_saved_battery_level = 100;
+#define LAST_SAVED_BATTERY_LEVEL_EMPTY 255 // means no saved level yet
+static uint8_t last_saved_battery_level = LAST_SAVED_BATTERY_LEVEL_EMPTY;
 static uint16_t last_saved_timestamp = 0;
+static uint16_t timestamp_offset = 0; // For clearing history
 
 // Work item for periodic recording
 static void battery_history_work_handler(struct k_work *work);
@@ -66,8 +64,13 @@ static int battery_history_settings_set(const char *name, size_t len, settings_r
                                         void *cb_arg);
 static int battery_history_settings_commit(void);
 
-SETTINGS_STATIC_HANDLER_DEFINE(battery_history, "battery_history", NULL,
-                               battery_history_settings_set, battery_history_settings_commit, NULL);
+SETTINGS_STATIC_HANDLER_DEFINE(battery_history, "bh", NULL, battery_history_settings_set,
+                               battery_history_settings_commit, NULL);
+
+struct history_buffer_state {
+    uint16_t head;
+    uint16_t count;
+};
 
 /**
  * Get the absolute index in the circular buffer
@@ -124,10 +127,10 @@ static void add_history_entry(uint16_t timestamp, uint8_t level) {
  */
 static int set_single_entry(int buffer_idx) {
     char key[32];
-    snprintf(key, sizeof(key), "battery_history/e%d", buffer_idx);
+    snprintf(key, sizeof(key), "bh/e%d", buffer_idx);
 
-    int rc = settings_runtime_set(key, &history_buffer[buffer_idx],
-                                  sizeof(struct zmk_battery_history_entry));
+    int rc = settings_save_one(key, &history_buffer[buffer_idx],
+                               sizeof(struct zmk_battery_history_entry));
     if (rc < 0) {
         LOG_ERR("Failed to set entry %d: %d", buffer_idx, rc);
     }
@@ -136,7 +139,6 @@ static int set_single_entry(int buffer_idx) {
 
 /**
  * Save history to persistent storage (incremental save)
- * Uses settings_runtime_set for each item, then a single flush at the end
  */
 static int save_history(void) {
     if (!initialization_done) {
@@ -154,15 +156,13 @@ static int save_history(void) {
     int rc;
 
     // Set head and count (small data, always needed)
-    rc = settings_runtime_set("battery_history/head", &history_head, sizeof(history_head));
+    struct history_buffer_state state = {
+        .head = (uint16_t)history_head,
+        .count = (uint16_t)history_count,
+    };
+    rc = settings_save_one("bh/p", &state, sizeof(state));
     if (rc < 0) {
         LOG_ERR("Failed to set history head: %d", rc);
-        return rc;
-    }
-
-    rc = settings_runtime_set("battery_history/count", &history_count, sizeof(history_count));
-    if (rc < 0) {
-        LOG_ERR("Failed to set history count: %d", rc);
         return rc;
     }
 
@@ -184,17 +184,11 @@ static int save_history(void) {
         }
     }
 
-    // Single flush to commit all changes to storage
-    rc = settings_save();
-    if (rc < 0) {
-        LOG_ERR("Failed to flush settings: %d", rc);
-        return rc;
-    }
     first_unsaved_idx = -1;
     unsaved_count = 0;
     head_changed_since_save = false;
     last_saved_battery_level = current_battery_level;
-    last_saved_timestamp = k_uptime_get() / 1000;
+    last_saved_timestamp = k_uptime_get() / 1000 - timestamp_offset;
 
     LOG_INF("Battery history saved successfully (incremental)");
     return 0;
@@ -205,6 +199,12 @@ static int save_history(void) {
  * Returns true if battery has dropped by threshold since last save
  */
 static bool should_save_entries(uint16_t timestamp, uint8_t current_battery_level) {
+#ifdef CONFIG_ZMK_BATTERY_HISTORY_FORCE_SAVE_IF_EMPTY
+    if (last_saved_battery_level == LAST_SAVED_BATTERY_LEVEL_EMPTY) {
+        LOG_DBG("Save triggered: no previous saved battery level");
+        return true;
+    }
+#endif
     uint8_t level_gap = last_saved_battery_level > current_battery_level
                             ? last_saved_battery_level - current_battery_level
                             : current_battery_level - last_saved_battery_level;
@@ -248,7 +248,9 @@ static bool should_record_entry(uint16_t timestamp, uint8_t level) {
     }
 
     // Always record if battery level changed
-    if (last_entry.battery_level != level) {
+    uint8_t diff = last_entry.battery_level > level ? last_entry.battery_level - level
+                                                    : level - last_entry.battery_level;
+    if (diff >= CONFIG_ZMK_BATTERY_HISTORY_LEVEL_THRESHOLD) {
         LOG_DBG("Recording entry: level changed from %d%% to %d%%", last_entry.battery_level,
                 level);
         return true;
@@ -267,13 +269,13 @@ static bool should_record_entry(uint16_t timestamp, uint8_t level) {
     // Note: Since timestamp resets on boot, wrap-around is not a concern here
     // as we always record first entry after boot
     uint16_t time_diff = timestamp - last_entry.timestamp;
-    if (time_diff >= MIN_SAME_LEVEL_INTERVAL_SEC) {
+    if (time_diff >= RECORDING_SAME_LEVEL_INTERVAL_SEC) {
         LOG_DBG("Recording entry: time threshold passed (%u sec)", time_diff);
         return true;
     }
 
     LOG_DBG("Skipping record: level unchanged (%d%%), time_diff=%u < threshold=%d", level,
-            time_diff, MIN_SAME_LEVEL_INTERVAL_SEC);
+            time_diff, RECORDING_SAME_LEVEL_INTERVAL_SEC);
     return false;
 }
 
@@ -286,7 +288,7 @@ static void record_battery_level() {
         return;
     }
     // Get current timestamp (seconds since boot)
-    uint16_t timestamp = (uint16_t)(k_uptime_get() / 1000);
+    uint16_t timestamp = (uint16_t)(k_uptime_get() / 1000 - timestamp_offset);
 
     // Get current battery level
     int level = zmk_battery_state_of_charge();
@@ -337,18 +339,18 @@ static void battery_history_work_handler(struct k_work *work) {
  */
 static int battery_history_settings_set(const char *name, size_t len, settings_read_cb read_cb,
                                         void *cb_arg) {
-    if (!strcmp(name, "head")) {
-        if (len != sizeof(history_head)) {
+    if (!strcmp(name, "p")) {
+        if (len != sizeof(struct history_buffer_state)) {
             return -EINVAL;
         }
-        return read_cb(cb_arg, &history_head, sizeof(history_head));
-    }
-
-    if (!strcmp(name, "count")) {
-        if (len != sizeof(history_count)) {
-            return -EINVAL;
+        struct history_buffer_state state;
+        int res = read_cb(cb_arg, &state, sizeof(state));
+        if (res < 0) {
+            return res;
         }
-        return read_cb(cb_arg, &history_count, sizeof(history_count));
+        history_head = state.head;
+        history_count = state.count;
+        return 0;
     }
 
     // individual entries with "eN" keys
@@ -358,7 +360,9 @@ static int battery_history_settings_set(const char *name, size_t len, settings_r
             if (len != sizeof(struct zmk_battery_history_entry)) {
                 return -EINVAL;
             }
-            return read_cb(cb_arg, &history_buffer[idx], sizeof(struct zmk_battery_history_entry));
+            int res =
+                read_cb(cb_arg, &history_buffer[idx], sizeof(struct zmk_battery_history_entry));
+            return MIN(res, 0);
         }
     }
 
@@ -461,13 +465,16 @@ int zmk_battery_history_clear(void) {
     first_unsaved_idx = -1;
     first_record_after_boot = true;
     head_changed_since_save = false;
-    last_saved_battery_level = current_battery_level;
+    last_saved_battery_level = LAST_SAVED_BATTERY_LEVEL_EMPTY;
+    last_saved_timestamp = 0;
+    timestamp_offset = k_uptime_get() / 1000;
     memset(history_buffer, 0, sizeof(history_buffer));
 
-    // Save the cleared state using runtime_set + flush
-    settings_runtime_set("battery_history/head", &history_head, sizeof(history_head));
-    settings_runtime_set("battery_history/count", &history_count, sizeof(history_count));
-    settings_save();
+    struct history_buffer_state state = {
+        .head = (uint16_t)history_head,
+        .count = (uint16_t)history_count,
+    };
+    settings_save_one("bh/p", &state, sizeof(state));
 
     LOG_INF("Battery history cleared: %d entries removed", cleared);
     return cleared;
