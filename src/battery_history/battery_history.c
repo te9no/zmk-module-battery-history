@@ -527,7 +527,7 @@ static void battery_history_send_work_handler(struct k_work *work) {
         }
 
         data->next_index++;
-        k_work_schedule(&data->work, K_MSEC(10));
+        k_work_schedule(&data->work, K_MSEC(50));
     } else if (count == 0) {
         // Send empty completion event
         struct zmk_battery_history_entry_event ev = {
@@ -537,7 +537,11 @@ static void battery_history_send_work_handler(struct k_work *work) {
             .total_entries = 0,
             .is_last = true,
         };
-        raise_zmk_battery_history_entry_event(ev);
+        int rc = raise_zmk_battery_history_entry_event(ev);
+        if (rc != 0) {
+            LOG_ERR("Failed to raise battery history empty event: %d", rc);
+            return;
+        }
         data->is_sending = false;
     } else {
         data->is_sending = false;
