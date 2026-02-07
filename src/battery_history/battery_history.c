@@ -360,7 +360,7 @@ static int battery_history_settings_set(const char *name, size_t len, settings_r
         return 0;
     }
 
-    // recording enabled setting
+    // recording enabled setting (relative path within "bh" namespace)
     if (!strcmp(name, "enabled")) {
         if (len != sizeof(bool)) {
             return -EINVAL;
