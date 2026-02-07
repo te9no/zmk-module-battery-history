@@ -309,7 +309,7 @@ export function BatteryHistorySection() {
         } else if (resp.getRecordingEnabled) {
           setState((prev) => ({
             ...prev,
-            recordingEnabled: resp.getRecordingEnabled.recordingEnabled,
+            recordingEnabled: resp.getRecordingEnabled!.recordingEnabled,
           }));
         }
       }
@@ -354,7 +354,7 @@ export function BatteryHistorySection() {
           } else if (resp.setRecordingEnabled) {
             setState((prev) => ({
               ...prev,
-              recordingEnabled: resp.setRecordingEnabled.recordingEnabled,
+              recordingEnabled: resp.setRecordingEnabled!.recordingEnabled,
               isLoading: false,
             }));
           }
