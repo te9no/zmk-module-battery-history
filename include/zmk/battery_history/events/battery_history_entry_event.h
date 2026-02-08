@@ -18,11 +18,11 @@
  * On central, receiving this event from peripheral triggers RPC notification.
  */
 struct zmk_battery_history_entry_event {
-    uint8_t source;                            // Source ID: 0 for central, 1+ for peripherals
-    struct zmk_battery_history_entry entry;    // Battery history entry
-    uint8_t entry_index;                       // Index of this entry in the batch (0-based)
-    uint8_t total_entries;                     // Total number of entries in the batch
-    bool is_last;                              // True if this is the last entry
+    uint8_t source;                         // Source ID: 0 for central, 1+ for peripherals
+    struct zmk_battery_history_entry entry; // Battery history entry
+    uint8_t entry_index;                    // Index of this entry in the batch (0-based)
+    uint8_t total_entries;                  // Total number of entries in the batch
+    bool is_last;                           // True if this is the last entry
 };
 
 ZMK_EVENT_DECLARE(zmk_battery_history_entry_event);
