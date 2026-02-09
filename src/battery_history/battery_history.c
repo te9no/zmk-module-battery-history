@@ -572,7 +572,7 @@ int battery_history_send_work_init(void) {
 }
 SYS_INIT(battery_history_send_work_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
 
-#if IS_ENABLED(CONFIG_ZMK_SPLIT)
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_RELAY_EVENT)
 
 ZMK_RELAY_EVENT_HANDLE(zmk_battery_history_entry_event, bh, source);
 ZMK_RELAY_EVENT_PERIPHERAL_TO_CENTRAL(zmk_battery_history_entry_event, bh, source);
